@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lilydale–Warburton Rail Trail | 3D Explorer</title>
+
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.117/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.117/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=Lato:wght@300;400&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:       #07100d;
+      --panel:    rgba(10, 22, 17, 0.88);
+      --border:   rgba(52, 211, 153, 0.18);
+      --accent:   #34d399;
+      --accent2:  #6ee7b7;
+      --blue:     #60a5fa;
+      --amber:    #fbbf24;
+      --grey:     #9ca3af;
+      --text:     #ecfdf5;
+      --subtext:  #6ee7b7;
+      --muted:    #4b7a67;
+      --radius:   12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Lato', sans-serif; color: var(--text); }
+
+    #cesiumContainer { position: absolute; inset: 0; }
+
+    .cesium-credit-logoContainer,
+    .cesium-credit-expand-link { display: none !important; }
+    .cesium-widget-credits { bottom: 4px !important; right: 6px !important; font-size: 9px !important; opacity: 0.4; }
+
+    /* Loading screen */
+    #loader {
+      position: absolute; inset: 0; z-index: 999;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      transition: opacity 0.6s ease;
+    }
+    #loader.fade { opacity: 0; pointer-events: none; }
+
+    .loader-ring {
+      width: 48px; height: 48px;
+      border: 3px solid rgba(52,211,153,0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-word {
+      font-family: 'Syne', sans-serif;
+      font-size: 22px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--accent);
+    }
+    .loader-sub {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px; color: var(--muted); letter-spacing: 0.06em;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      position: absolute; top: 16px; left: 16px; width: 272px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      padding: 22px 20px; z-index: 10;
+      display: flex; flex-direction: column; gap: 16px;
+      max-height: calc(100vh - 32px); overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(52,211,153,0.06);
+      animation: slideIn 0.5s ease 0.2s both;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-16px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    #sidebar::-webkit-scrollbar { width: 3px; }
+    #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .tag {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; font-weight: 500;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(52,211,153,0.08);
+      border: 1px solid var(--border);
+      border-radius: 4px; padding: 3px 8px;
+      display: inline-block; margin-bottom: 8px;
+    }
+    .app-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text);
+    }
+    .app-title span { color: var(--accent); }
+    .student-info {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.6;
+    }
+
+    .div { border: none; border-top: 1px solid var(--border); }
+
+    .sec {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; font-weight: 500;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 8px;
+    }
+
+    .leg-item {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12.5px; color: var(--text); padding: 4px 0;
+    }
+    .leg-dot {
+      width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+      box-shadow: 0 0 6px currentColor;
+    }
+    .leg-line {
+      width: 26px; height: 4px; border-radius: 2px; flex-shrink: 0;
+      box-shadow: 0 0 8px rgba(255,255,255,0.4);
+    }
+
+    .tog-row {
+      display: flex; align-items: center;
+      justify-content: space-between; font-size: 12.5px; padding: 5px 0;
+    }
+    .switch { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .track {
+      position: absolute; inset: 0;
+      background: rgba(52,211,153,0.1);
+      border: 1px solid var(--border); border-radius: 20px; transition: background 0.2s;
+    }
+    .track::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 12px; height: 12px;
+      background: var(--muted); border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .switch input:checked + .track { background: rgba(52,211,153,0.2); border-color: var(--accent); }
+    .switch input:checked + .track::after { transform: translateX(16px); background: var(--accent); }
+
+    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .fly-btn {
+      background: rgba(52,211,153,0.05);
+      border: 1px solid var(--border); border-radius: 7px;
+      color: var(--text); font-family: 'Lato', sans-serif;
+      font-size: 11.5px; padding: 8px 8px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      text-align: left; line-height: 1.4;
+    }
+    .fly-btn:hover { background: rgba(52,211,153,0.12); border-color: var(--accent); transform: translateY(-1px); }
+    .fly-btn:active { transform: translateY(0); }
+
+    .hint { font-size: 10.5px; color: var(--muted); line-height: 1.6; font-style: italic; }
+
+    /* Info box */
+    #infoBox {
+      position: absolute; bottom: 20px; right: 20px; width: 230px;
+      background: var(--panel);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      padding: 16px 18px; z-index: 10;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: none;
+    }
+    #infoBox.show { display: block; animation: popIn 0.2s ease; }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.95) translateY(6px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .info-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 4px; margin-bottom: 8px; display: inline-block;
+    }
+    .info-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 15px; font-weight: 600; color: var(--text);
+      margin-bottom: 8px; line-height: 1.3;
+    }
+    .info-row { display: flex; gap: 6px; font-size: 11.5px; margin-bottom: 3px; }
+    .info-label { color: var(--muted); flex-shrink: 0; }
+    .info-val { color: var(--accent2); font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
+    .close-btn {
+      margin-top: 12px; font-size: 10px; color: var(--muted);
+      cursor: pointer; font-family: 'IBM Plex Mono', monospace;
+      letter-spacing: 0.06em; display: inline-block; transition: color 0.15s;
+    }
+    .close-btn:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="loader-ring"></div>
+  <div class="loader-word">Trail Explorer</div>
+  <div class="loader-sub">Initialising 3D scene…</div>
+</div>
+
+<div id="cesiumContainer"></div>
+
+<div id="sidebar">
+  <div>
+    <div class="tag">RMIT · GEOM2086 · 2026</div>
+    <div class="app-title">Lilydale–<span>Warburton</span><br>Rail Trail</div>
+    <div class="student-info">
+      Ollie Addison<br>
+      Student ID: S4003811<br>
+      3D Interactive Trail Explorer
+    </div>
+  </div>
+
+  <hr class="div" />
+
+  <div>
+    <div class="sec">Waypoint Legend</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#9ca3af;color:#9ca3af;"></div>Car park</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#60a5fa;color:#60a5fa;"></div>Toilet</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#4ade80;color:#4ade80;"></div>Picnic tables</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#fb923c;color:#fb923c;"></div>Info / Other</div>
+    <div class="leg-item" style="margin-top:4px;"><div class="leg-line" style="background:#fff;"></div>Trail path</div>
+  </div>
+
+  <hr class="div" />
+
+  <div>
+    <div class="sec">Layers</div>
+    <div class="tog-row">
+      <span>Google 3D Tiles</span>
+      <label class="switch"><input type="checkbox" id="tog3d" checked /><div class="track"></div></label>
+    </div>
+    <div class="tog-row">
+      <span>Trail Line</span>
+      <label class="switch"><input type="checkbox" id="togTrail" checked /><div class="track"></div></label>
+    </div>
+    <div class="tog-row">
+      <span>Waypoints</span>
+      <label class="switch"><input type="checkbox" id="togPts" checked /><div class="track"></div></label>
+    </div>
+  </div>
+
+  <hr class="div" />
+
+  <div>
+    <div class="sec">Fly To</div>
+    <div class="btn-grid">
+      <button class="fly-btn" onclick="flyTo(145.51,-37.775,4500,-55)">🗺 Overview</button>
+      <button class="fly-btn" onclick="flyTo(145.354,-37.758,600,-40)">🚉 Lilydale</button>
+      <button class="fly-btn" onclick="flyTo(145.681,-37.763,600,-40)">🏔 Warburton</button>
+      <button class="fly-btn" onclick="flyTo(145.423,-37.777,500,-35)">🌿 Seville</button>
+      <button class="fly-btn" onclick="flyTo(145.502,-37.779,500,-35)">🌾 Wandin</button>
+      <button class="fly-btn" onclick="flyTo(145.601,-37.770,500,-35)">🌲 Launching Pl</button>
+    </div>
+  </div>
+
+  <hr class="div" />
+
+  <p class="hint">Click any waypoint to inspect its details. Scroll to zoom · drag to pan · right-drag to tilt.</p>
+</div>
+
+<div id="infoBox">
+  <div class="info-badge" id="infoBadge"></div>
+  <div class="info-name" id="infoName">—</div>
+  <div class="info-row">
+    <span class="info-label">Coords</span>
+    <span class="info-val" id="infoCoords">—</span>
+  </div>
+  <div class="info-row" id="descRow" style="display:none;">
+    <span class="info-label">Note</span>
+    <span class="info-val" id="infoDesc">—</span>
+  </div>
+  <span class="close-btn" onclick="document.getElementById('infoBox').classList.remove('show')">✕ close</span>
+</div>
+
+<script>
+  Cesium.Ion.defaultAccessToken =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxYjVjOTIzNS04ZjQ0LTQ5ZTUtODYzYi0zYTM4NGIzOGIxMDMiLCJpZCI6NDA3NjYzLCJpYXQiOjE3NzQyNDAyNzF9.Ln-SKH7xWEDEI6xkNSHjvJSBINnBUG5gfcXey1DKOUw';
+
+  const viewer = new Cesium.Viewer('cesiumContainer', {
+    terrain:              Cesium.Terrain.fromWorldTerrain(),
+    timeline:             false,
+    animation:            false,
+    baseLayerPicker:      false,
+    homeButton:           false,
+    sceneModePicker:      false,
+    navigationHelpButton: false,
+    geocoder:             false,
+    fullscreenButton:     false,
+    infoBox:              false,
+    selectionIndicator:   false,
+  });
+
+  viewer.scene.globe.enableLighting = true;
+  viewer.scene.globe.depthTestAgainstTerrain = true;
+
+  // Google Photorealistic 3D Tiles
+  let googleTiles = null;
+  (async () => {
+    try {
+      googleTiles = await Cesium.createGooglePhotorealistic3DTileset();
+      viewer.scene.primitives.add(googleTiles);
+    } catch (e) {
+      console.warn('Google 3D Tiles unavailable, falling back to OSM Buildings:', e);
+      try {
+        googleTiles = await Cesium.createOsmBuildingsAsync();
+        viewer.scene.primitives.add(googleTiles);
+      } catch (e2) { console.warn('OSM Buildings also failed:', e2); }
+    }
+  })();
+
+  // Colour by waypoint name
+  function waypointColor(name) {
+    const n = (name || '').toLowerCase();
+    if (n.includes('car park') || n.includes('carpark') || n.includes('parking'))
+      return { col: Cesium.Color.fromCssColorString('#9ca3af'), hex: '#9ca3af', label: 'Car park' };
+    if (n.includes('toilet') || n.includes('bathroom') || n.includes('restroom'))
+      return { col: Cesium.Color.fromCssColorString('#60a5fa'), hex: '#60a5fa', label: 'Toilet' };
+    if (n.includes('picnic'))
+      return { col: Cesium.Color.fromCssColorString('#4ade80'), hex: '#4ade80', label: 'Picnic tables' };
+    return   { col: Cesium.Color.fromCssColorString('#fb923c'), hex: '#fb923c', label: 'Info / Other' };
+  }
+
+  let trailDS = null, pointsDS = null;
+
+  async function loadTrail() {
+    trailDS = await Cesium.GeoJsonDataSource.load(
+      'Lilydale_to_Warburton_Rail_Trail.geojson',
+      { clampToGround: true }
+    );
+    viewer.dataSources.add(trailDS);
+    trailDS.entities.values.forEach(e => {
+      if (e.polyline) {
+        e.polyline.width              = new Cesium.ConstantProperty(7);
+        e.polyline.material           = new Cesium.ColorMaterialProperty(Cesium.Color.WHITE.withAlpha(0.92));
+        e.polyline.clampToGround      = new Cesium.ConstantProperty(true);
+        e.polyline.classificationType = new Cesium.ConstantProperty(Cesium.ClassificationType.TERRAIN);
+      }
+      if (e.polygon)  e.show = false;
+      if (e.billboard) e.billboard = undefined;
+    });
+  }
+
+  async function loadWaypoints() {
+    pointsDS = await Cesium.GeoJsonDataSource.load(
+      'Lilydale_to_Warburton_Rail_Trail_waypoints.geojson',
+      { clampToGround: true }
+    );
+    viewer.dataSources.add(pointsDS);
+    pointsDS.entities.values.forEach(e => {
+      const name = e.properties?.Name?.getValue() ?? e.name ?? '';
+      const { col } = waypointColor(name);
+      e.billboard = undefined;
+      e.point = new Cesium.PointGraphics({
+        color:            col,
+        pixelSize:        13,
+        outlineColor:     Cesium.Color.WHITE.withAlpha(0.9),
+        outlineWidth:     2.5,
+        heightReference:  Cesium.HeightReference.CLAMP_TO_GROUND,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scaleByDistance:  new Cesium.NearFarScalar(200, 1.5, 8000, 0.6),
+      });
+      e.label = new Cesium.LabelGraphics({
+        text:             name,
+        font:             '600 12px "Lato", sans-serif',
+        fillColor:        Cesium.Color.WHITE,
+        outlineColor:     Cesium.Color.BLACK,
+        outlineWidth:     3,
+        style:            Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin:   Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset:      new Cesium.Cartesian2(0, -18),
+        heightReference:  Cesium.HeightReference.CLAMP_TO_GROUND,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 1500),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      });
+    });
+  }
+
+  async function init() {
+    try { await Promise.all([loadTrail(), loadWaypoints()]); }
+    catch (err) { console.error('GeoJSON load error:', err); }
+
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(145.51, -37.775, 4500),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
+      duration: 2.5,
+    });
+
+    setTimeout(() => {
+      document.getElementById('loader').classList.add('fade');
+      setTimeout(() => document.getElementById('loader').remove(), 700);
+    }, 900);
+  }
+
+  init();
+
+  // Click handler
+  const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+  handler.setInputAction(click => {
+    const picked = viewer.scene.pick(click.position);
+    if (!Cesium.defined(picked) || !Cesium.defined(picked.id)) return;
+    const entity = picked.id;
+    if (!entity.properties) return;
+
+    const name = entity.properties?.Name?.getValue() ?? entity.name ?? 'Unknown';
+    const { hex, label } = waypointColor(name);
+
+    let coords = '—';
+    const pos = entity.position?.getValue(Cesium.JulianDate.now());
+    if (pos) {
+      const c = Cesium.Cartographic.fromCartesian(pos);
+      coords = `${Cesium.Math.toDegrees(c.longitude).toFixed(5)}°E  ${Cesium.Math.toDegrees(c.latitude).toFixed(5)}°S`;
+    }
+
+    const badge = document.getElementById('infoBadge');
+    badge.textContent = label;
+    badge.style.cssText += `background:${hex}22;color:${hex};border:1px solid ${hex}55;`;
+
+    document.getElementById('infoName').textContent   = name;
+    document.getElementById('infoCoords').textContent = coords;
+
+    const desc = entity.properties?.description?.getValue() ?? entity.properties?.Description?.getValue() ?? null;
+    const descRow = document.getElementById('descRow');
+    if (desc) { document.getElementById('infoDesc').textContent = desc; descRow.style.display = 'flex'; }
+    else       { descRow.style.display = 'none'; }
+
+    document.getElementById('infoBox').classList.add('show');
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // Layer toggles
+  document.getElementById('tog3d').addEventListener('change',    e => { if (googleTiles) googleTiles.show = e.target.checked; });
+  document.getElementById('togTrail').addEventListener('change', e => { if (trailDS)     trailDS.show     = e.target.checked; });
+  document.getElementById('togPts').addEventListener('change',   e => { if (pointsDS)    pointsDS.show    = e.target.checked; });
+
+  // Fly-to
+  function flyTo(lon, lat, height, pitchDeg) {
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(pitchDeg), roll: 0 },
+      duration: 2,
+    });
+  }
+</script>
+</body>
+</html>
